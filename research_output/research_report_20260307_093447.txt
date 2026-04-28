@@ -1,0 +1,53 @@
+
+===============================================================================
+        RESEARCH REPORT: DAMAGED PARCEL DETECTION USING YOLOv8m
+===============================================================================
+
+EXPERIMENT INFORMATION
+===============================================================================
+Date: 2026-03-07 09:36:48
+Model: YOLOv8m
+Classes: ['hole', 'wet']
+
+OVERALL PERFORMANCE
+===============================================================================
+• mAP@0.5: 0.7861
+• mAP@0.5:0.95: 0.4044
+• Precision: 0.8094
+• Recall: 0.7436
+• F1-Score: 0.7751
+
+THRESHOLD ANALYSIS
+===============================================================================
+
+Optimal Confidence Threshold: 0.10
+• Precision at optimal threshold: 0.8094
+• Recall at optimal threshold: 0.7436
+• F1-Score at optimal threshold: 0.7751
+• mAP50 at optimal threshold: 0.8007
+
+PER-CLASS PERFORMANCE
+===============================================================================
+
+hole:
+  • Precision: 0.7724
+  • Recall: 0.7297
+  • F1-Score: 0.7504
+
+wet:
+  • Precision: 0.8465
+  • Recall: 0.7576
+  • F1-Score: 0.7996
+
+===============================================================================
+                        CONCLUSION
+===============================================================================
+The YOLOv8m model demonstrates satisfactory performance in detecting damaged parcels,
+with an overall mAP50 of 78.6%.
+
+Best results are achieved at a confidence threshold of 0.10,
+balancing precision and recall with an F1-score of 0.7751.
+
+===============================================================================
+Report Generated: 2026-03-07 09:36:48
+===============================================================================

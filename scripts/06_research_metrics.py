@@ -20,15 +20,29 @@ class ResearchAnalyzer:
         self.research_dir = Path('research_output')
         self.research_dir.mkdir(exist_ok=True)
         self.timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        self.model_family = 'yolov8m'
+        self.model_label = 'YOLOv8m'
+        # Keep validation lightweight on Windows to avoid multiprocessing paging-file crashes.
+        self.val_base_kwargs = {
+            'data': 'dataset/data.yaml',
+            'iou': 0.6,
+            'workers': 0,
+            'verbose': False,
+            'plots': False
+        }
         
     def load_model(self, model_path=None):
-        """Load the best model"""
+        """Load the best YOLOv8m model by default."""
         if model_path is None:
-            model_files = list(Path('results').rglob('*/weights/best.pt'))
-            if not model_files:
-                logger.error("No trained model found!")
+            # Prefer trained YOLOv8m runs in results/, then fallback to root yolov8m.pt.
+            model_files = list(Path('results').glob(f'{self.model_family}*/weights/best.pt'))
+            if model_files:
+                model_path = max(model_files, key=lambda x: x.stat().st_mtime)
+            elif Path(f'{self.model_family}.pt').exists():
+                model_path = Path(f'{self.model_family}.pt')
+            else:
+                logger.error("No YOLOv8m model found in results/*/weights/best.pt or yolov8m.pt")
                 return None
-            model_path = max(model_files, key=lambda x: x.stat().st_mtime)
         
         logger.info(f"Loading model: {model_path}")
         return YOLO(str(model_path))
@@ -41,12 +55,7 @@ class ResearchAnalyzer:
         results = []
         
         for conf in thresholds:
-            metrics = model.val(
-                data='dataset/data.yaml',
-                conf=conf,
-                iou=0.6,
-                verbose=False
-            )
+            metrics = model.val(conf=conf, **self.val_base_kwargs)
             
             f1 = 2 * (metrics.box.mp * metrics.box.mr) / (metrics.box.mp + metrics.box.mr + 1e-10)
             
@@ -99,10 +108,9 @@ class ResearchAnalyzer:
         logger.info("Running confusion matrix analysis...")
         
         # Run validation to get predictions
-        results = model.val(data='dataset/data.yaml')
+        results = model.val(**self.val_base_kwargs)
         
         # Load confusion matrix image if available
-        conf_matrix_path = Path('results') / 'yolov12*' / 'confusion_matrix.png'
         conf_files = list(Path('results').glob('**/confusion_matrix.png'))
         
         if conf_files:
@@ -120,17 +128,31 @@ class ResearchAnalyzer:
         logger.info("Calculating per-class metrics...")
         
         # Get detailed metrics
-        metrics = model.val(data='dataset/data.yaml')
+        metrics = model.val(**self.val_base_kwargs)
+        box_metrics = metrics.box
+
+        # Ultralytics v8 exposes class-wise precision/recall/F1 as arrays and AP via methods.
+        p = np.asarray(getattr(box_metrics, 'p', []), dtype=float)
+        r = np.asarray(getattr(box_metrics, 'r', []), dtype=float)
+        f1 = np.asarray(getattr(box_metrics, 'f1', []), dtype=float)
+        ap50_attr = getattr(box_metrics, 'ap50', np.array([]))
+        ap_attr = getattr(box_metrics, 'ap', np.array([]))
+        ap50 = np.asarray(ap50_attr() if callable(ap50_attr) else ap50_attr, dtype=float)
+        ap5095 = np.asarray(ap_attr() if callable(ap_attr) else ap_attr, dtype=float)
+
+        if f1.size == 0 and p.size and r.size:
+            f1 = 2 * (p * r) / (p + r + 1e-10)
         
         class_metrics = []
         for i, class_name in enumerate(model.names.values()):
             class_metrics.append({
                 'class': class_name,
-                'precision': metrics.box.ap_class[i],
-                'recall': metrics.box.ar_class[i],
-                'f1': 2 * (metrics.box.ap_class[i] * metrics.box.ar_class[i]) / 
-                      (metrics.box.ap_class[i] + metrics.box.ar_class[i] + 1e-10),
-                'images': metrics.box.nc
+                'precision': float(p[i]) if i < p.size else 0.0,
+                'recall': float(r[i]) if i < r.size else 0.0,
+                'f1': float(f1[i]) if i < f1.size else 0.0,
+                'ap50': float(ap50[i]) if i < ap50.size else 0.0,
+                'map50-95': float(ap5095[i]) if i < ap5095.size else 0.0,
+                'num_classes': int(getattr(box_metrics, 'nc', 0))
             })
         
         df = pd.DataFrame(class_metrics)
@@ -169,17 +191,17 @@ class ResearchAnalyzer:
         """Generate complete research report"""
         
         # Get overall metrics
-        metrics = model.val(data='dataset/data.yaml')
+        metrics = model.val(**self.val_base_kwargs)
         
         report = f"""
 ===============================================================================
-        RESEARCH REPORT: DAMAGED PARCEL DETECTION USING YOLOv12
+        RESEARCH REPORT: DAMAGED PARCEL DETECTION USING {self.model_label}
 ===============================================================================
 
 EXPERIMENT INFORMATION
 ===============================================================================
 Date: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}
-Model: {model.model_name}
+Model: {self.model_label}
 Classes: {list(model.names.values())}
 
 OVERALL PERFORMANCE
@@ -219,10 +241,10 @@ PER-CLASS PERFORMANCE
 ===============================================================================
                         CONCLUSION
 ===============================================================================
-The YOLOv12 model demonstrates {'excellent' if metrics.box.map50 > 0.9 else 
-                                  'good' if metrics.box.map50 > 0.8 else
-                                  'satisfactory' if metrics.box.map50 > 0.7 else
-                                  'moderate'} performance in detecting damaged parcels,
+The {self.model_label} model demonstrates {'excellent' if metrics.box.map50 > 0.9 else 
+                                           'good' if metrics.box.map50 > 0.8 else
+                                           'satisfactory' if metrics.box.map50 > 0.7 else
+                                           'moderate'} performance in detecting damaged parcels,
 with an overall mAP50 of {metrics.box.map50:.1%}.
 
 Best results are achieved at a confidence threshold of {best_thresh['threshold']:.2f},
@@ -247,7 +269,7 @@ if __name__ == "__main__":
     analyzer = ResearchAnalyzer()
     
     # Load model
-    model_path = input("Enter model path (press Enter for latest): ").strip()
+    model_path = input("Enter model path (press Enter for latest YOLOv8m): ").strip()
     model = analyzer.load_model(model_path if model_path else None)
     
     if model:
