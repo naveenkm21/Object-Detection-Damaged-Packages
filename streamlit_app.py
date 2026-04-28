@@ -6,7 +6,9 @@ Built for supply chain quality-control demos.
 from __future__ import annotations
 
 import io
+import os
 import time
+import urllib.request
 import zipfile
 from datetime import datetime
 from pathlib import Path
@@ -23,6 +25,10 @@ from ultralytics import YOLO
 # ---------------------------------------------------------------------------
 ROOT = Path(__file__).parent
 MODEL_PATH = ROOT / "results/yolov8m_optimized_20260224_1855/weights/best.pt"
+MODEL_URL = os.environ.get(
+    "MODEL_URL",
+    "https://github.com/naveenkm21/Object-Detection-Damaged-Packages/releases/download/v1.0-weights/best.pt",
+)
 RESEARCH_DIR = ROOT / "research_output"
 SAMPLE_DIR = ROOT / "dataset/test/images"
 
@@ -90,6 +96,17 @@ st.markdown(CUSTOM_CSS, unsafe_allow_html=True)
 # ---------------------------------------------------------------------------
 # Model loading
 # ---------------------------------------------------------------------------
+def ensure_model(model_path: Path, url: str) -> Path:
+    if model_path.exists():
+        return model_path
+    model_path.parent.mkdir(parents=True, exist_ok=True)
+    with st.spinner(f"Downloading model weights ({url.rsplit('/', 1)[-1]})..."):
+        tmp_path = model_path.with_suffix(model_path.suffix + ".part")
+        urllib.request.urlretrieve(url, tmp_path)
+        tmp_path.replace(model_path)
+    return model_path
+
+
 @st.cache_resource(show_spinner="Loading YOLOv8m model...")
 def load_model(model_path: Path) -> YOLO:
     return YOLO(str(model_path))
@@ -514,6 +531,11 @@ shopfloor team gets a single number — not a wall of bounding boxes.
 def main():
     page, conf, iou = sidebar_controls()
 
+    try:
+        ensure_model(MODEL_PATH, MODEL_URL)
+    except Exception as exc:
+        st.error(f"Could not download model weights from {MODEL_URL}\n\n{exc}")
+        st.stop()
     if not MODEL_PATH.exists():
         st.error(f"Model not found at: {MODEL_PATH.as_posix()}")
         st.stop()
