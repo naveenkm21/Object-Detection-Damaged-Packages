@@ -17,7 +17,8 @@ import cv2
 import numpy as np
 import pandas as pd
 import streamlit as st
-from PIL import Image
+import torch
+from PIL import Image, ImageOps
 from ultralytics import YOLO
 
 # ---------------------------------------------------------------------------
@@ -31,6 +32,7 @@ MODEL_URL = os.environ.get(
 )
 RESEARCH_DIR = ROOT / "research_output"
 SAMPLE_DIR = ROOT / "dataset/test/images"
+MAX_IMAGE_EDGE = int(os.environ.get("MAX_IMAGE_EDGE", "1600"))
 
 CLASS_COLORS = {"hole": "#E64A4A", "wet": "#3E8AE6"}
 CLASS_ICONS = {"hole": "🕳️", "wet": "💧"}
@@ -133,12 +135,47 @@ def load_research_metrics():
 # ---------------------------------------------------------------------------
 # Inference helpers
 # ---------------------------------------------------------------------------
+def prepare_image_for_inference(image: Image.Image) -> np.ndarray:
+    image_rgb = ImageOps.exif_transpose(image).convert("RGB")
+    if MAX_IMAGE_EDGE > 0 and max(image_rgb.size) > MAX_IMAGE_EDGE:
+        # Resize overly large inputs to prevent memory errors during conversion.
+        image_rgb.thumbnail((MAX_IMAGE_EDGE, MAX_IMAGE_EDGE), Image.LANCZOS)
+    try:
+        return np.array(image_rgb)
+    except MemoryError:
+        fallback_edge = 1024 if MAX_IMAGE_EDGE <= 0 else min(1024, max(320, MAX_IMAGE_EDGE // 2))
+        if max(image_rgb.size) > fallback_edge:
+            image_rgb.thumbnail((fallback_edge, fallback_edge), Image.LANCZOS)
+            return np.array(image_rgb)
+        raise
+
+
 def run_inference(model: YOLO, image: Image.Image, conf: float, iou: float):
-    image_rgb = image.convert("RGB")
-    image_np = np.array(image_rgb)
+    try:
+        image_np = prepare_image_for_inference(image)
+    except MemoryError:
+        st.error("Image too large to process. Please upload a smaller resolution image.")
+        st.stop()
 
     t0 = time.perf_counter()
-    results = model.predict(source=image_np, conf=conf, iou=iou, verbose=False)
+    use_cpu = st.session_state.get("force_cpu", False)
+    predict_kwargs = {"source": image_np, "conf": conf, "iou": iou, "verbose": False}
+    if use_cpu:
+        predict_kwargs["device"] = "cpu"
+    try:
+        results = model.predict(**predict_kwargs)
+    except RuntimeError as exc:
+        if "cuda" in str(exc).lower():
+            st.session_state["force_cpu"] = True
+            if torch.cuda.is_available():
+                torch.cuda.empty_cache()
+            predict_kwargs["device"] = "cpu"
+            results = model.predict(**predict_kwargs)
+            if not st.session_state.get("warned_cpu_fallback", False):
+                st.warning("CUDA error detected. Falling back to CPU inference for this session.")
+                st.session_state["warned_cpu_fallback"] = True
+        else:
+            raise
     elapsed_ms = (time.perf_counter() - t0) * 1000.0
 
     result = results[0]
