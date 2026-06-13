@@ -33,11 +33,23 @@ docker run -p 8501:8501 scm-parcel-inspection
 
 1. **🏠 Live Inspection** — upload or pick a sample image, get a verdict
    (PASS / REVIEW / REJECT), damage score, latency, and annotated view.
+
+<img width="1087" height="670" alt="image" src="https://github.com/user-attachments/assets/4cd533fe-c00e-45f9-8b5a-64e1031bcedf" />
+
 2. **🗂️ Batch Processing** — drop an entire shipment of images, get a
    verdict table and a downloadable ZIP report (annotated PNGs + CSV).
-3. **📊 Model Performance** — per-class metrics, confusion matrix, and
+
+<img width="1098" height="672" alt="image" src="https://github.com/user-attachments/assets/6eed301b-eb5e-456c-9592-afe92bbbebcf" />
+   
+4. **📊 Model Performance** — per-class metrics, confusion matrix, and
    threshold sweeps from the validation run.
-4. **ℹ️ About** — SCM context, pipeline placement, and decision logic.
+
+<img width="1131" height="674" alt="image" src="https://github.com/user-attachments/assets/2e86371b-7b9c-4290-8246-d217d2070726" />
+
+6. **ℹ️ About** — SCM context, pipeline placement, and decision logic.
+
+<img width="1129" height="614" alt="image" src="https://github.com/user-attachments/assets/0e031e37-613d-4783-ba69-74f82915e287" />
+
 
 ## SCM decision logic
 
